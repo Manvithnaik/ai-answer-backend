@@ -42,23 +42,65 @@ class MockLLM(BaseLLM):
     
     def _find_best_match(self, query: str) -> str:
         """Find best matching response from knowledge base"""
-        # Try exact/partial keyword matches first
-        for key, value in self.knowledge_base.items():
-            if key in query or self._fuzzy_match(key, query):
-                return value
+        best_match = None
+        best_score = 0
         
-        # Try multi-word matches
         for key, value in self.knowledge_base.items():
-            key_words = key.split()
-            if len(key_words) > 1 and all(word in query for word in key_words):
-                return value
+            score = self._calculate_match_score(key, query)
+            if score > best_score:
+                best_score = score
+                best_match = value
         
-        return None
+        # Only return if we have a reasonable match (score > 0)
+        return best_match if best_score > 0 else None
     
-    def _fuzzy_match(self, key: str, query: str) -> bool:
-        """Check if key words appear in query"""
-        key_words = key.split()
-        return any(word in query for word in key_words if len(word) > 3)
+    def _calculate_match_score(self, key: str, query: str) -> int:
+        """Calculate how well a key matches the query"""
+        score = 0
+        key_lower = key.lower()
+        query_lower = query.lower()
+        
+        # Exact match (highest priority)
+        if key_lower == query_lower:
+            return 1000
+        
+        # Key is substring of query
+        if key_lower in query_lower:
+            score += 100 + len(key_lower) * 2  # Longer matches score higher
+        
+        # Query is substring of key
+        if query_lower in key_lower:
+            score += 50
+        
+        # Count matching words (excluding common words)
+        common_words = {'what', 'is', 'are', 'the', 'a', 'an', 'how', 'does', 'do', 'tell', 'me', 
+                       'about', 'explain', 'in', 'to', 'of', 'for', 'with', 'on', 'at'}
+        
+        key_words = set(key_lower.split()) - common_words
+        query_words = set(query_lower.split()) - common_words
+        
+        matching_words = key_words & query_words
+        
+        # All key words match
+        if key_words and matching_words == key_words:
+            score += 80 + len(matching_words) * 10
+        # Partial word matches
+        elif matching_words:
+            score += len(matching_words) * 15
+        
+        # Check for important keywords that should boost score
+        important_keywords = {
+            'react', 'fastapi', 'ai', 'llm', 'hooks', 'jwt', 'usestate', 'useeffect',
+            'transformer', 'rag', 'rlhf', 'authentication', 'async', 'component',
+            'pydantic', 'middleware', 'websocket', 'redux', 'context', 'fiber',
+            'bert', 'gpt', 'embedding', 'quantization', 'langchain'
+        }
+        
+        for keyword in important_keywords:
+            if keyword in key_lower and keyword in query_lower:
+                score += 30
+        
+        return score
     
     def _build_knowledge_base(self) -> dict:
         """Build comprehensive knowledge base"""
@@ -165,6 +207,8 @@ class MockLLM(BaseLLM):
             
             # INTERMEDIATE
             'pydantic models': 'Pydantic models provide automatic data validation, serialization, and documentation. Use Python type hints for validation. Support nested models, custom validators with @validator, and field constraints with Field().',
+            
+            'pydantic': 'Pydantic models provide automatic data validation, serialization, and documentation. Use Python type hints for validation. Support nested models, custom validators with @validator, and field constraints with Field().',
             
             'dependency injection': 'FastAPI\'s dependency injection uses Depends() to declare dependencies automatically resolved and injected into path operations. Enables code reuse, testing, security, database sessions. Example: def get_db(): ... then use db: Session = Depends(get_db).',
             
